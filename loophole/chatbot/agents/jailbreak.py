@@ -38,9 +38,16 @@ def _format_prior_attempts(attempts: list[TestCase]) -> str:
 
 
 class JailbreakFinder(BaseAgent):
-    def __init__(self, llm: LLMClient, temperature: float = 0.9, cases_per_agent: int = 3):
+    def __init__(
+        self,
+        llm: LLMClient,
+        temperature: float = 0.9,
+        cases_per_agent: int = 3,
+        bot_llm: LLMClient | None = None,
+    ):
         super().__init__(llm, temperature=temperature)
         self.cases_per_agent = cases_per_agent
+        self.bot_llm = bot_llm or llm  # Separate (weaker) model for the chatbot
 
     def _build_system_prompt(self, **kwargs: Any) -> str:
         return JAILBREAK_SYSTEM.format(cases_per_agent=self.cases_per_agent)
@@ -73,7 +80,8 @@ class JailbreakFinder(BaseAgent):
         all_attempts: list[TestCase] = []
 
         for attack_prompt, strategy in attacks:
-            bot_response = self.llm.call(
+            # Use the weaker bot model for the chatbot
+            bot_response = self.bot_llm.call(
                 system=state.current_prompt.text,
                 user_message=attack_prompt,
                 temperature=0.3,
@@ -102,7 +110,7 @@ class JailbreakFinder(BaseAgent):
             if succeeded:
                 confirmed.append(attempt)
 
-        # Phase 2: Multi-turn attacks (the real jailbreaks)
+        # Phase 2: Multi-turn attacks
         multiturn_plans = self._plan_multiturn(state)
         for plan in multiturn_plans:
             result = self._execute_multiturn(state, plan)
@@ -114,7 +122,6 @@ class JailbreakFinder(BaseAgent):
         return confirmed, all_attempts
 
     def _plan_multiturn(self, state: ChatbotSession) -> list[list[str]]:
-        """Ask the adversary to plan multi-turn conversation attacks."""
         cfg = state.config
         system = JAILBREAK_MULTITURN_SYSTEM
         user_msg = JAILBREAK_MULTITURN_USER.format(
@@ -133,7 +140,6 @@ class JailbreakFinder(BaseAgent):
         return _parse_multiturn_plans(raw)
 
     def _execute_multiturn(self, state: ChatbotSession, turns: list[str]) -> TestCase:
-        """Run a multi-turn conversation and evaluate the final state."""
         messages = []
         conversation = []
 
@@ -141,9 +147,10 @@ class JailbreakFinder(BaseAgent):
             messages.append({"role": "user", "content": user_msg})
             conversation.append(ConversationTurn(role="user", content=user_msg))
 
-            response = self.llm.client.messages.create(
-                model=self.llm.model,
-                max_tokens=self.llm.max_tokens,
+            # Use the weaker bot model
+            response = self.bot_llm.client.messages.create(
+                model=self.bot_llm.model,
+                max_tokens=self.bot_llm.max_tokens,
                 temperature=0.3,
                 system=state.current_prompt.text,
                 messages=messages,
@@ -152,7 +159,6 @@ class JailbreakFinder(BaseAgent):
             messages.append({"role": "assistant", "content": bot_response})
             conversation.append(ConversationTurn(role="assistant", content=bot_response))
 
-        # Evaluate the full conversation
         full_convo = "\n".join(
             f"{'User' if t.role == 'user' else 'Bot'}: {t.content}"
             for t in conversation
@@ -161,7 +167,7 @@ class JailbreakFinder(BaseAgent):
         succeeded = eval_result is not None
 
         return TestCase(
-            id=0,  # Will be assigned if confirmed
+            id=0,
             round=state.current_round,
             attack_type=AttackType.JAILBREAK,
             attack_prompt=f"[Multi-turn, {len(turns)} messages] {turns[0][:100]}...",

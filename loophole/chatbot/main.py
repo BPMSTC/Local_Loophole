@@ -42,16 +42,18 @@ def _load_config() -> dict:
 
 def _build_agents(config: dict, weak: bool = False) -> dict:
     model = config["model"]["default"]
+    bot_model = config["model"].get("bot", "claude-haiku-4-5-20241022")
     max_tokens = config["model"]["max_tokens"]
     temps = config["temperatures"]
     cases_per = config["loop"]["cases_per_agent"]
 
     llm = LLMClient(model=model, max_tokens=max_tokens)
+    bot_llm = LLMClient(model=bot_model, max_tokens=max_tokens)
 
     return {
         "drafter": Drafter(llm, temperature=temps["legislator"], weak=weak),
-        "jailbreak": JailbreakFinder(llm, temperature=temps["loophole_finder"], cases_per_agent=cases_per),
-        "refusal": RefusalFinder(llm, temperature=temps["overreach_finder"], cases_per_agent=cases_per),
+        "jailbreak": JailbreakFinder(llm, temperature=temps["loophole_finder"], cases_per_agent=cases_per, bot_llm=bot_llm),
+        "refusal": RefusalFinder(llm, temperature=temps["overreach_finder"], cases_per_agent=cases_per, bot_llm=bot_llm),
         "judge": Judge(llm, temperature=temps["judge"]),
     }
 

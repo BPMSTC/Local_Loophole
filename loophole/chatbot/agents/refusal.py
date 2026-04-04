@@ -36,9 +36,16 @@ def _format_prior_attempts(attempts: list[TestCase]) -> str:
 
 
 class RefusalFinder(BaseAgent):
-    def __init__(self, llm: LLMClient, temperature: float = 0.9, cases_per_agent: int = 3):
+    def __init__(
+        self,
+        llm: LLMClient,
+        temperature: float = 0.9,
+        cases_per_agent: int = 3,
+        bot_llm: LLMClient | None = None,
+    ):
         super().__init__(llm, temperature=temperature)
         self.cases_per_agent = cases_per_agent
+        self.bot_llm = bot_llm or llm
 
     def _build_system_prompt(self, **kwargs: Any) -> str:
         return REFUSAL_SYSTEM.format(cases_per_agent=self.cases_per_agent)
@@ -70,7 +77,7 @@ class RefusalFinder(BaseAgent):
         all_attempts: list[TestCase] = []
 
         for attack_prompt, strategy in attacks:
-            bot_response = self.llm.call(
+            bot_response = self.bot_llm.call(
                 system=state.current_prompt.text,
                 user_message=attack_prompt,
                 temperature=0.3,
