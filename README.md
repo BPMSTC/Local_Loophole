@@ -111,15 +111,20 @@ Provide your company info and chatbot rules. Loophole generates a system prompt,
 # Interactive
 uv run python -m loophole.chatbot.main
 
-# Or with flags
-uv run python -m loophole.chatbot.main new --company "Acme Corp" --desc "Cloud storage provider"
+# With a config file
+uv run python -m loophole.chatbot.main new -c examples/dentist_chatbot.yaml
+
+# With --weak for a minimal starting prompt (good for demos)
+uv run python -m loophole.chatbot.main new -c examples/dentist_chatbot.yaml --weak
 ```
 
-Two adversarial agents attack each round:
-- **Jailbreak Finder**: crafts prompts that get the bot to discuss forbidden topics. Each attack is actually *run* against the system prompt, then evaluated.
+Two adversarial agents attack each round using both single-turn and multi-turn conversation strategies:
+- **Jailbreak Finder**: crafts prompts that get the bot to discuss forbidden topics. Each attack is actually *run* against the chatbot, then evaluated. Includes multi-turn attacks that build rapport across 3-4 messages before pivoting.
 - **Refusal Finder**: crafts legitimate customer questions the bot wrongly refuses. Also run and evaluated.
 
-Only confirmed failures (where the bot actually misbehaved) get through to the Judge. If neither adversary can break the prompt for 2 consecutive rounds, the system declares it robust.
+Only confirmed failures (where the bot actually misbehaved) get through to the Judge. All attempts are logged regardless of outcome. If neither adversary can break the prompt for 2 consecutive rounds, the system declares it robust.
+
+The `--weak` flag starts with a deliberately naive one-sentence system prompt with no guardrails, so you can watch the prompt harden from nothing as each attack lands and gets patched.
 
 ```bash
 uv run python -m loophole.chatbot.main resume     # Resume
@@ -135,7 +140,8 @@ Edit `config.yaml` to tune the system:
 
 ```yaml
 model:
-  default: "claude-sonnet-4-20250514"   # Which Claude model to use
+  default: "claude-sonnet-4-20250514"   # Adversaries, judge, drafter
+  bot: "claude-haiku-4-5-20251001"      # The chatbot being tested (chatbot mode only)
   max_tokens: 4096
 
 temperatures:
@@ -150,6 +156,8 @@ loop:
 
 session_dir: "sessions"
 ```
+
+In chatbot mode, the adversaries and judge use the stronger model while the chatbot being tested uses the weaker model. This means the attackers are smarter than their target — which is the right setup for finding real vulnerabilities.
 
 ## Writing Good Principles
 
