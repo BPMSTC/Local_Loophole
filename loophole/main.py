@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -28,7 +29,13 @@ def _load_config() -> dict:
     if config_path.exists():
         return yaml.safe_load(config_path.read_text())
     return {
-        "model": {"default": "claude-sonnet-4-20250514", "max_tokens": 4096},
+        "model": {
+            "provider": "anthropic",
+            "default": "claude-sonnet-4-20250514",
+            "max_tokens": 4096,
+            "base_url": None,
+            "api_key_env": "ANTHROPIC_API_KEY",
+        },
         "temperatures": {
             "legislator": 0.4,
             "loophole_finder": 0.9,
@@ -41,12 +48,20 @@ def _load_config() -> dict:
 
 
 def _build_agents(config: dict) -> dict:
-    model = config["model"]["default"]
-    max_tokens = config["model"]["max_tokens"]
+    model_config = config["model"]
+    model = model_config["default"]
+    max_tokens = model_config["max_tokens"]
     temps = config["temperatures"]
     cases_per = config["loop"]["cases_per_agent"]
 
-    llm = LLMClient(model=model, max_tokens=max_tokens)
+    api_key_env = model_config.get("api_key_env")
+    llm = LLMClient(
+        model=model,
+        max_tokens=max_tokens,
+        provider=model_config.get("provider", "anthropic"),
+        base_url=model_config.get("base_url"),
+        api_key=os.getenv(api_key_env) if api_key_env else None,
+    )
 
     return {
         "legislator": Legislator(llm, temperature=temps["legislator"]),

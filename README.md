@@ -67,7 +67,7 @@ Each resolved case — whether by the Judge or by you — becomes binding preced
 
 ## Setup
 
-Requires Python 3.12+ and an Anthropic API key.
+Requires Python 3.12+.
 
 ```bash
 # Clone and install
@@ -75,9 +75,57 @@ git clone <repo-url>
 cd law
 uv sync
 
-# Set your API key
+# If using Anthropic
 export ANTHROPIC_API_KEY="sk-ant-..."
 ```
+
+### Run With Anthropic
+
+Use the default config as-is:
+
+```yaml
+model:
+  provider: "anthropic"
+  default: "claude-sonnet-4-20250514"
+  max_tokens: 4096
+  base_url: null
+  api_key_env: "ANTHROPIC_API_KEY"
+```
+
+### Run With Ollama
+
+The repo now supports a local Ollama server without changing any agent code.
+
+```bash
+ollama pull llama3.1:8b
+ollama serve
+```
+
+Then update `config.yaml`:
+
+```yaml
+model:
+  provider: "ollama"
+  default: "llama3.1:8b"
+  max_tokens: 4096
+  base_url: "http://localhost:11434"
+  api_key_env: null
+```
+
+### Run With Another Local OpenAI-Compatible Server
+
+LM Studio, vLLM, llama.cpp server, and similar tools usually expose a `/v1/chat/completions` endpoint.
+
+```yaml
+model:
+  provider: "openai-compatible"
+  default: "local-model-name"
+  max_tokens: 4096
+  base_url: "http://localhost:1234/v1"
+  api_key_env: "OPENAI_API_KEY"
+```
+
+If your local server does not require auth, set `api_key_env: null`.
 
 ## Usage
 
@@ -132,8 +180,11 @@ Edit `config.yaml` to tune the system:
 
 ```yaml
 model:
-  default: "claude-sonnet-4-20250514"   # Which Claude model to use
+  provider: "anthropic"                 # anthropic | ollama | openai-compatible
+  default: "claude-sonnet-4-20250514"   # Model name for the selected provider
   max_tokens: 4096
+  base_url: null                         # Required for ollama or openai-compatible
+  api_key_env: "ANTHROPIC_API_KEY"      # Optional env var name for provider auth
 
 temperatures:
   legislator: 0.4          # Lower = more precise drafting
@@ -164,7 +215,7 @@ See `examples/privacy_principles.txt` for a starting point.
 loophole/
   main.py              CLI and main adversarial loop
   models.py            Data models (SessionState, Case, LegalCode)
-  llm.py               Anthropic SDK wrapper
+  llm.py               Provider-aware LLM client (Anthropic or local backends)
   prompts.py           All agent prompt templates
   session.py           Session persistence (JSON + markdown)
   visualize.py         HTML report generator
