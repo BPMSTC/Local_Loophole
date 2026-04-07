@@ -127,6 +127,42 @@ model:
 
 If your local server does not require auth, set `api_key_env: null`.
 
+### Recommended Local Setup
+
+For smaller local machines, start with a conservative configuration and a strong instruct model rather than a larger reasoning model.
+
+Current recommended baseline:
+
+```yaml
+model:
+  provider: "openai-compatible"
+  default: "qwen2.5-7b-instruct"
+  max_tokens: 4096
+  base_url: "http://localhost:1234/v1"
+  api_key_env: null
+
+temperatures:
+  legislator: 0.4
+  loophole_finder: 0.9
+  overreach_finder: 0.9
+  judge: 0.2
+
+loop:
+  max_rounds: 3
+  cases_per_agent: 1
+```
+
+Why these defaults:
+- `qwen2.5-7b-instruct` is a better fit for structured prompt-following than smaller chat models or larger reasoning models on modest hardware.
+- `judge: 0.2` reduces format drift and makes validation more stable.
+- `max_rounds: 3` and `cases_per_agent: 1` keep first-run latency manageable while testing a local setup.
+
+For LM Studio specifically:
+1. Load the model in LM Studio.
+2. Start the local server.
+3. Make sure the OpenAI-compatible endpoint is available at `http://localhost:1234/v1`.
+4. Run Loophole normally.
+
 ## Usage
 
 ### Start a new session
@@ -190,11 +226,11 @@ temperatures:
   legislator: 0.4          # Lower = more precise drafting
   loophole_finder: 0.9     # Higher = more creative attacks
   overreach_finder: 0.9
-  judge: 0.3               # Lower = more conservative judgments
+  judge: 0.2               # Lower = more conservative judgments
 
 loop:
-  max_rounds: 10
-  cases_per_agent: 3       # How many cases each attacker finds per round
+  max_rounds: 3
+  cases_per_agent: 1       # How many cases each attacker finds per round
 
 session_dir: "sessions"
 ```
@@ -216,6 +252,7 @@ loophole/
   main.py              CLI and main adversarial loop
   models.py            Data models (SessionState, Case, LegalCode)
   llm.py               Provider-aware LLM client (Anthropic or local backends)
+  parsing.py           Tolerant output parsing and repair helpers for local models
   prompts.py           All agent prompt templates
   session.py           Session persistence (JSON + markdown)
   visualize.py         HTML report generator
@@ -236,3 +273,13 @@ config.yaml            Model and loop configuration
 Most attempts to formalize ethics start with the rules and hope they cover everything. Loophole starts with your intuitions and systematically finds where they break down. It's less "solve ethics" and more "discover what you actually believe by watching it fail."
 
 The same architecture applies anywhere humans write rules for AI systems: content moderation policies, LLM system prompts, codes of conduct, safety specifications. Anywhere there's a gap between what the rules say and what the rules mean, Loophole will find it.
+
+## Local Model Reliability
+
+Hosted frontier models are usually better at returning exact tagged output. Smaller local models are more likely to add preambles, code fences, partial tags, or slightly malformed structures.
+
+Loophole now hardens this path in two ways:
+- It uses more tolerant parsing for tags like `<legal_code>`, `<verdict>`, `<passes>`, `<description>`, and `<explanation>`.
+- If parsing fails, it performs one low-temperature repair pass that asks the model to re-emit the same content in the exact expected format.
+
+This does not make the model smarter. It makes the system less brittle when the model mostly follows instructions but misses the exact output shape.

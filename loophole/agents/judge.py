@@ -6,6 +6,7 @@ from typing import Any
 
 from loophole.agents.base import BaseAgent
 from loophole.models import Case, SessionState
+from loophole.parsing import extract_tag, parse_bool_tag, parse_choice_tag
 from loophole.prompts import JUDGE_RESOLVE, JUDGE_SYSTEM, JUDGE_VALIDATE
 
 
@@ -59,22 +60,33 @@ class Judge(BaseAgent):
     def evaluate(self, state: SessionState, case: Case) -> JudgeResult:
         raw = self.run(state, case=case)
 
-        verdict_match = re.search(r"<verdict>\s*(.*?)\s*</verdict>", raw, re.DOTALL)
-        verdict = verdict_match.group(1).strip().lower() if verdict_match else "unresolvable"
+        verdict = parse_choice_tag(raw, "verdict", {"resolvable", "unresolvable"})
+        reasoning = extract_tag(raw, "reasoning") or ""
 
-        reasoning = _extract_tag(raw, "reasoning") or ""
+        if verdict is None:
+            repaired = self.repair_output(
+                raw,
+                "<reasoning>...</reasoning>\n<verdict>resolvable OR unresolvable</verdict>\n"
+                "<proposed_revision>...</proposed_revision>\n<resolution_summary>...</resolution_summary>\n"
+                "<conflict_explanation>...</conflict_explanation>",
+            )
+            raw = repaired
+            verdict = parse_choice_tag(raw, "verdict", {"resolvable", "unresolvable"})
+            reasoning = extract_tag(raw, "reasoning") or reasoning
+
+        verdict = verdict or "unresolvable"
 
         if verdict == "resolvable":
             return JudgeResult(
                 resolvable=True,
                 reasoning=reasoning,
-                proposed_revision=_extract_tag(raw, "proposed_revision"),
-                resolution_summary=_extract_tag(raw, "resolution_summary"),
+                proposed_revision=extract_tag(raw, "proposed_revision"),
+                resolution_summary=extract_tag(raw, "resolution_summary"),
             )
         return JudgeResult(
             resolvable=False,
             reasoning=reasoning,
-            conflict_explanation=_extract_tag(raw, "conflict_explanation"),
+            conflict_explanation=extract_tag(raw, "conflict_explanation") or raw,
         )
 
     def validate(self, state: SessionState, proposed_code: str) -> ValidationResult:
@@ -88,13 +100,15 @@ class Judge(BaseAgent):
         )
         raw = self.llm.call(JUDGE_SYSTEM, user_msg, temperature=self.temperature)
 
-        passes_match = re.search(r"<passes>\s*(.*?)\s*</passes>", raw, re.DOTALL)
-        passes = passes_match.group(1).strip().lower() == "true" if passes_match else False
+        passes = parse_bool_tag(raw, "passes")
+        details = extract_tag(raw, "details")
 
-        details = _extract_tag(raw, "details") or raw
-        return ValidationResult(passes=passes, details=details)
+        if passes is None:
+            repaired = self.repair_output(
+                raw,
+                "<validation><passes>true OR false</passes><details>...</details></validation>",
+            )
+            passes = parse_bool_tag(repaired, "passes")
+            details = details or extract_tag(repaired, "details")
 
-
-def _extract_tag(text: str, tag: str) -> str | None:
-    m = re.search(rf"<{tag}>(.*?)</{tag}>", text, re.DOTALL)
-    return m.group(1).strip() if m else None
+        return ValidationResult(passes=bool(passes), details=details or raw)

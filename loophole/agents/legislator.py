@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from loophole.agents.base import BaseAgent
 from loophole.models import Case, LegalCode, SessionState
+from loophole.parsing import extract_tag
 from loophole.prompts import LEGISLATOR_INITIAL, LEGISLATOR_REVISE, LEGISLATOR_SYSTEM
 
 
@@ -47,20 +47,25 @@ class Legislator(BaseAgent):
 
     def draft_initial(self, state: SessionState) -> LegalCode:
         raw = self.run(state)
-        text = _extract_tag(raw, "legal_code") or raw
+        text = extract_tag(raw, "legal_code")
+        if not text:
+            repaired = self.repair_output(raw, "<legal_code>...</legal_code>")
+            text = extract_tag(repaired, "legal_code") or raw
         return LegalCode(version=1, text=text.strip())
 
     def revise(self, state: SessionState, case: Case) -> LegalCode:
         raw = self.run(state, case=case)
-        text = _extract_tag(raw, "legal_code") or raw
-        changelog = _extract_tag(raw, "changelog")
+        text = extract_tag(raw, "legal_code")
+        changelog = extract_tag(raw, "changelog")
+        if not text:
+            repaired = self.repair_output(
+                raw,
+                "<legal_code>...</legal_code>\n\n<changelog>...</changelog>",
+            )
+            text = extract_tag(repaired, "legal_code") or raw
+            changelog = changelog or extract_tag(repaired, "changelog")
         return LegalCode(
             version=state.current_code.version + 1,
             text=text.strip(),
             changelog=changelog,
         )
-
-
-def _extract_tag(text: str, tag: str) -> str | None:
-    m = re.search(rf"<{tag}>(.*?)</{tag}>", text, re.DOTALL)
-    return m.group(1).strip() if m else None

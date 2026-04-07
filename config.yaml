@@ -1,18 +1,18 @@
 model:
-  provider: "anthropic"
-  default: "claude-sonnet-4-20250514"
+  provider: "openai-compatible"
+  default: "qwen2.5-7b-instruct"
   max_tokens: 4096
-  base_url: null
-  api_key_env: "ANTHROPIC_API_KEY"
+  base_url: "http://localhost:1234/v1"
+  api_key_env: null
 
 temperatures:
   legislator: 0.4
   loophole_finder: 0.9
   overreach_finder: 0.9
-  judge: 0.3
+  judge: 0.2
 
 loop:
-  max_rounds: 10
-  cases_per_agent: 3
+  max_rounds: 3
+  cases_per_agent: 1
 
 session_dir: "sessions"

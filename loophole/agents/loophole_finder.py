@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import re
 from typing import Any
 
 from loophole.agents.base import BaseAgent
 from loophole.models import Case, CaseType, SessionState
+from loophole.parsing import parse_scenarios
 from loophole.prompts import LOOPHOLE_FINDER_SYSTEM, LOOPHOLE_FINDER_USER
 
 
@@ -37,23 +37,26 @@ class LoopholeFinder(BaseAgent):
 
     def find(self, state: SessionState) -> list[Case]:
         raw = self.run(state)
-        return _parse_scenarios(raw, state)
+        parsed = parse_scenarios(raw)
+        if not parsed:
+            repaired = self.repair_output(
+                raw,
+                "<scenario><description>...</description><explanation>...</explanation></scenario>",
+            )
+            parsed = parse_scenarios(repaired)
+        return _build_cases(parsed, state, CaseType.LOOPHOLE)
 
 
-def _parse_scenarios(raw: str, state: SessionState) -> list[Case]:
+def _build_cases(parsed: list[tuple[str, str]], state: SessionState, case_type: CaseType) -> list[Case]:
     cases: list[Case] = []
-    for m in re.finditer(
-        r"<scenario>\s*<description>(.*?)</description>\s*<explanation>(.*?)</explanation>\s*</scenario>",
-        raw,
-        re.DOTALL,
-    ):
+    for description, explanation in parsed:
         cases.append(
             Case(
                 id=state.next_case_id + len(cases),
                 round=state.current_round,
-                case_type=CaseType.LOOPHOLE,
-                scenario=m.group(1).strip(),
-                explanation=m.group(2).strip(),
+                case_type=case_type,
+                scenario=description,
+                explanation=explanation,
             )
         )
     return cases
